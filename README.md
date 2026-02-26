@@ -18,8 +18,7 @@ System prerequisite: `gdbus` must be available on your system (usually provided 
 ## Run
 
 ```bash
-source .venv/bin/activate
-python overlay_server.py --host 127.0.0.1 --port 8765 --dbus-mode auto
+./scripts/start.sh
 ```
 
 If you run inside distrobox and DBus is blocked, force host-side DBus calls:
@@ -36,12 +35,13 @@ Open this URL in OBS Browser Source:
 ## Run in background
 
 ```bash
-source .venv/bin/activate
-nohup python overlay_server.py --host 127.0.0.1 --port 8765 --dbus-mode auto > overlay.log 2>&1 &
+./scripts/start-bg.sh
 ```
 
 Stop it later:
 
 ```bash
-pkill -f "python overlay_server.py"
+./scripts/stop-bg.sh
 ```
+
+All helper scripts use `--dbus-mode auto`, so they work both inside and outside distrobox.
