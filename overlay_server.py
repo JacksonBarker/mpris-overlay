@@ -312,10 +312,15 @@ OVERLAY_HTML = """<!doctype html>
     :root {
       --ink: #1f2b2a;
       --muted: rgba(31, 43, 42, 0.66);
-      --card-left: #7ec6aa;
-      --card-right: #e9e9eb;
+      --muted-strong: rgba(31, 43, 42, 0.74);
+      --card-base: #8ebfb0;
+      --card-splashes:
+        radial-gradient(120% 120% at 14% 18%, rgba(233, 233, 235, 0.34) 0%, rgba(233, 233, 235, 0) 46%),
+        radial-gradient(95% 120% at 86% 20%, rgba(122, 148, 169, 0.30) 0%, rgba(122, 148, 169, 0) 54%),
+        radial-gradient(88% 94% at 62% 88%, rgba(174, 203, 195, 0.28) 0%, rgba(174, 203, 195, 0) 52%);
       --progress-bg: rgba(31, 43, 42, 0.16);
       --progress-fill: #6d9388;
+      --text-shadow: none;
       --font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     }
     html, body {
@@ -337,9 +342,11 @@ OVERLAY_HTML = """<!doctype html>
       min-height: 180px;
       border-radius: 20px;
       overflow: hidden;
+      position: relative;
+      isolation: isolate;
       display: grid;
       grid-template-columns: 180px 1fr;
-      background: linear-gradient(90deg, var(--card-left) 0%, var(--card-left) 84%, var(--card-right) 84%, var(--card-right) 100%);
+      background: var(--card-splashes), var(--card-base);
       box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
       font-family: var(--font);
       color: var(--ink);
@@ -348,6 +355,8 @@ OVERLAY_HTML = """<!doctype html>
     .art-wrap {
       padding: 16px;
       box-sizing: border-box;
+      position: relative;
+      z-index: 1;
     }
     #art {
       width: 148px;
@@ -369,6 +378,9 @@ OVERLAY_HTML = """<!doctype html>
       flex-direction: column;
       gap: 6px;
       min-width: 0;
+      position: relative;
+      z-index: 1;
+      text-shadow: var(--text-shadow);
     }
     #title {
       font-size: 38px;
@@ -378,7 +390,7 @@ OVERLAY_HTML = """<!doctype html>
       overflow: hidden;
       text-overflow: ellipsis;
       margin-top: 2px;
-      padding-bottom: 0.08em;
+      padding-bottom: 0.14em;
     }
     #artist {
       font-size: 32px;
@@ -387,7 +399,7 @@ OVERLAY_HTML = """<!doctype html>
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      padding-bottom: 0.08em;
+      padding-bottom: 0.14em;
     }
     .row {
       display: flex;
@@ -405,13 +417,13 @@ OVERLAY_HTML = """<!doctype html>
       text-overflow: ellipsis;
       min-width: 0;
       flex: 1 1 auto;
-      padding-bottom: 0.08em;
+      padding-bottom: 0.14em;
     }
     #status {
       font-size: 24px;
       font-weight: 700;
       letter-spacing: 0.04em;
-      color: rgba(31, 43, 42, 0.7);
+      color: var(--muted-strong);
       flex: 0 0 auto;
     }
     .progress {
@@ -424,7 +436,7 @@ OVERLAY_HTML = """<!doctype html>
       display: flex;
       justify-content: space-between;
       font-size: 24px;
-      color: rgba(31, 43, 42, 0.62);
+      color: var(--muted-strong);
       font-variant-numeric: tabular-nums;
     }
     .bar {
@@ -494,6 +506,7 @@ OVERLAY_HTML = """<!doctype html>
     </section>
   </article>
   <script>
+    const cardEl = document.querySelector(".card");
     const artEl = document.getElementById("art");
     const titleEl = document.getElementById("title");
     const artistEl = document.getElementById("artist");
@@ -503,6 +516,13 @@ OVERLAY_HTML = """<!doctype html>
     const totalEl = document.getElementById("total");
     const fillEl = document.getElementById("fill");
 
+    const DEFAULT_PALETTE = [
+      { r: 126, g: 198, b: 170 },
+      { r: 142, g: 191, b: 176 },
+      { r: 205, g: 210, b: 214 },
+      { r: 233, g: 233, b: 235 },
+    ];
+
     let lastArtUrl = "";
 
     function formatTimeFromUs(us) {
@@ -510,6 +530,187 @@ OVERLAY_HTML = """<!doctype html>
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    function clampByte(v) {
+      return Math.max(0, Math.min(255, Math.round(v)));
+    }
+
+    function mixColor(a, b, t) {
+      return {
+        r: clampByte(a.r + (b.r - a.r) * t),
+        g: clampByte(a.g + (b.g - a.g) * t),
+        b: clampByte(a.b + (b.b - a.b) * t),
+      };
+    }
+
+    function toRgb(color) {
+      return `rgb(${color.r}, ${color.g}, ${color.b})`;
+    }
+
+    function toRgba(color, alpha) {
+      return `rgba(${color.r}, ${color.g}, ${color.b}, ${alpha})`;
+    }
+
+    function colorDistance(a, b) {
+      const dr = a.r - b.r;
+      const dg = a.g - b.g;
+      const db = a.b - b.b;
+      return Math.sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    function luminance(color) {
+      const channels = [color.r, color.g, color.b].map((v) => {
+        const c = v / 255;
+        return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+    }
+
+    function contrastRatio(a, b) {
+      const l1 = luminance(a);
+      const l2 = luminance(b);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    function blendOver(bottom, top, alpha) {
+      return {
+        r: clampByte(bottom.r * (1 - alpha) + top.r * alpha),
+        g: clampByte(bottom.g * (1 - alpha) + top.g * alpha),
+        b: clampByte(bottom.b * (1 - alpha) + top.b * alpha),
+      };
+    }
+
+    function minContrastForForeground(fg, samples) {
+      let min = Infinity;
+      for (const bg of samples) {
+        min = Math.min(min, contrastRatio(fg, bg));
+      }
+      return min;
+    }
+
+    function applyPaletteTheme(palette) {
+      const colors = palette.length ? palette : DEFAULT_PALETTE;
+      const c1 = colors[0];
+      const c2 = colors[Math.min(1, colors.length - 1)];
+      const c3 = colors[Math.min(2, colors.length - 1)];
+      const c4 = colors[Math.min(3, colors.length - 1)];
+      const primary = mixColor(c1, c2, 0.18);
+      const splashA = mixColor(c2, { r: 255, g: 255, b: 255 }, 0.22);
+      const splashB = mixColor(c3, { r: 8, g: 12, b: 18 }, 0.18);
+      const splashC = mixColor(c4, c2, 0.52);
+
+      cardEl.style.setProperty("--card-base", toRgb(primary));
+      cardEl.style.setProperty(
+        "--card-splashes",
+        `radial-gradient(120% 120% at 14% 18%, ${toRgba(splashA, 0.34)} 0%, ${toRgba(splashA, 0)} 46%),
+         radial-gradient(95% 120% at 86% 20%, ${toRgba(splashB, 0.30)} 0%, ${toRgba(splashB, 0)} 54%),
+         radial-gradient(88% 94% at 62% 88%, ${toRgba(splashC, 0.28)} 0%, ${toRgba(splashC, 0)} 52%)`
+      );
+
+      const backgroundSamples = [
+        primary,
+        blendOver(primary, splashA, 0.26),
+        blendOver(primary, splashB, 0.24),
+        blendOver(primary, splashC, 0.22),
+        blendOver(blendOver(primary, splashA, 0.18), splashB, 0.14),
+        blendOver(blendOver(primary, splashB, 0.16), splashC, 0.16),
+      ];
+      const darkBase = { r: 18, g: 28, b: 34 };
+      const lightBase = { r: 246, g: 250, b: 253 };
+      const darkScore = minContrastForForeground(darkBase, backgroundSamples);
+      const lightScore = minContrastForForeground(lightBase, backgroundSamples);
+
+      if (darkScore >= lightScore) {
+        cardEl.style.setProperty("--ink", "rgba(14, 24, 29, 0.98)");
+        cardEl.style.setProperty("--muted", "rgba(14, 24, 29, 0.82)");
+        cardEl.style.setProperty("--muted-strong", "rgba(14, 24, 29, 0.88)");
+        cardEl.style.setProperty("--progress-bg", "rgba(14, 24, 29, 0.30)");
+        cardEl.style.setProperty("--progress-fill", "rgba(14, 24, 29, 0.62)");
+        cardEl.style.setProperty("--text-shadow", "0 1px 2px rgba(255, 255, 255, 0.18)");
+      } else {
+        cardEl.style.setProperty("--ink", "rgba(248, 252, 255, 0.99)");
+        cardEl.style.setProperty("--muted", "rgba(248, 252, 255, 0.85)");
+        cardEl.style.setProperty("--muted-strong", "rgba(248, 252, 255, 0.90)");
+        cardEl.style.setProperty("--progress-bg", "rgba(248, 252, 255, 0.34)");
+        cardEl.style.setProperty("--progress-fill", "rgba(248, 252, 255, 0.70)");
+        cardEl.style.setProperty("--text-shadow", "0 1px 2px rgba(0, 0, 0, 0.45)");
+      }
+    }
+
+    function extractPaletteFromArt() {
+      try {
+        const size = 56;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          return null;
+        }
+        ctx.drawImage(artEl, 0, 0, size, size);
+        const data = ctx.getImageData(0, 0, size, size).data;
+        const buckets = new Map();
+
+        for (let i = 0; i < data.length; i += 4) {
+          const alpha = data[i + 3];
+          if (alpha < 160) {
+            continue;
+          }
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          const qr = Math.round(r / 32) * 32;
+          const qg = Math.round(g / 32) * 32;
+          const qb = Math.round(b / 32) * 32;
+          const key = `${qr},${qg},${qb}`;
+          const slot = buckets.get(key) || { r: 0, g: 0, b: 0, count: 0 };
+          slot.r += r;
+          slot.g += g;
+          slot.b += b;
+          slot.count += 1;
+          buckets.set(key, slot);
+        }
+
+        const ranked = [...buckets.values()]
+          .filter((slot) => slot.count > 6)
+          .map((slot) => ({
+            r: clampByte(slot.r / slot.count),
+            g: clampByte(slot.g / slot.count),
+            b: clampByte(slot.b / slot.count),
+            count: slot.count,
+          }))
+          .sort((a, b) => b.count - a.count);
+
+        if (!ranked.length) {
+          return null;
+        }
+
+        const picked = [];
+        for (const color of ranked) {
+          if (picked.every((existing) => colorDistance(existing, color) >= 74)) {
+            picked.push({ r: color.r, g: color.g, b: color.b });
+          }
+          if (picked.length >= 4) {
+            break;
+          }
+        }
+
+        while (picked.length < 4) {
+          const tail = picked[picked.length - 1] || DEFAULT_PALETTE[picked.length];
+          const next = mixColor(tail, { r: 255, g: 255, b: 255 }, picked.length * 0.12);
+          picked.push(next);
+        }
+        return picked;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function applyDefaultTheme() {
+      applyPaletteTheme(DEFAULT_PALETTE);
     }
 
     function render(track) {
@@ -536,11 +737,16 @@ OVERLAY_HTML = """<!doctype html>
         lastArtUrl = "";
         artEl.removeAttribute("src");
         artEl.classList.add("placeholder");
+        applyDefaultTheme();
         return;
       }
       if (artUrl !== lastArtUrl) {
+        if (/^https?:\\/\\//i.test(artUrl)) {
+          artEl.crossOrigin = "anonymous";
+        } else {
+          artEl.removeAttribute("crossorigin");
+        }
         artEl.src = artUrl;
-        artEl.classList.remove("placeholder");
         lastArtUrl = artUrl;
       }
     }
@@ -556,10 +762,22 @@ OVERLAY_HTML = """<!doctype html>
       } catch (_) {}
     }
 
-    artEl.addEventListener("error", () => {
-      artEl.classList.add("placeholder");
+    artEl.addEventListener("load", () => {
+      artEl.classList.remove("placeholder");
+      const palette = extractPaletteFromArt();
+      if (palette) {
+        applyPaletteTheme(palette);
+      } else {
+        applyDefaultTheme();
+      }
     });
 
+    artEl.addEventListener("error", () => {
+      artEl.classList.add("placeholder");
+      applyDefaultTheme();
+    });
+
+    applyDefaultTheme();
     refreshTrack();
     setInterval(refreshTrack, 1000);
   </script>
