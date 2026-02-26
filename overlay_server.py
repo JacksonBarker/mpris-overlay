@@ -311,6 +311,7 @@ OVERLAY_HTML = """<!doctype html>
   <style>
     :root {
       --ink: #1f2b2a;
+      --subtext: rgba(31, 43, 42, 0.90);
       --muted: rgba(31, 43, 42, 0.66);
       --muted-strong: rgba(31, 43, 42, 0.74);
       --card-base: #8ebfb0;
@@ -320,7 +321,6 @@ OVERLAY_HTML = """<!doctype html>
         radial-gradient(88% 94% at 62% 88%, rgba(174, 203, 195, 0.28) 0%, rgba(174, 203, 195, 0) 52%);
       --progress-bg: rgba(31, 43, 42, 0.16);
       --progress-fill: #6d9388;
-      --text-shadow: none;
       --font: "Avenir Next", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
     }
     html, body {
@@ -332,14 +332,14 @@ OVERLAY_HTML = """<!doctype html>
     }
     body {
       display: flex;
-      align-items: flex-end;
+      align-items: flex-start;
       justify-content: flex-start;
-      padding: 20px;
+      padding: 0;
       box-sizing: border-box;
     }
     .card {
-      width: min(780px, calc(100vw - 40px));
-      min-height: 180px;
+      width: 780px;
+      height: 238px;
       border-radius: 20px;
       overflow: hidden;
       position: relative;
@@ -347,7 +347,6 @@ OVERLAY_HTML = """<!doctype html>
       display: grid;
       grid-template-columns: 180px 1fr;
       background: var(--card-splashes), var(--card-base);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
       font-family: var(--font);
       color: var(--ink);
       backdrop-filter: blur(2px);
@@ -380,7 +379,6 @@ OVERLAY_HTML = """<!doctype html>
       min-width: 0;
       position: relative;
       z-index: 1;
-      text-shadow: var(--text-shadow);
     }
     #title {
       font-size: 38px;
@@ -395,7 +393,7 @@ OVERLAY_HTML = """<!doctype html>
     #artist {
       font-size: 32px;
       line-height: 1.16;
-      color: var(--muted);
+      color: var(--subtext);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -411,7 +409,7 @@ OVERLAY_HTML = """<!doctype html>
     #album {
       font-size: 30px;
       line-height: 1.16;
-      color: var(--muted);
+      color: var(--subtext);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -451,36 +449,6 @@ OVERLAY_HTML = """<!doctype html>
       border-radius: inherit;
       background: var(--progress-fill);
       transition: width 220ms linear;
-    }
-    @media (max-width: 860px) {
-      .card {
-        grid-template-columns: 130px 1fr;
-        min-height: 130px;
-      }
-      .art-wrap {
-        padding: 12px;
-      }
-      #art {
-        width: 106px;
-        height: 106px;
-      }
-      .meta {
-        padding: 14px 16px 12px 4px;
-      }
-      #title {
-        font-size: 28px;
-        line-height: 1.18;
-      }
-      #artist, #album {
-        font-size: 22px;
-        line-height: 1.18;
-      }
-      #status, .times {
-        font-size: 17px;
-      }
-      .bar {
-        height: 10px;
-      }
     }
   </style>
 </head>
@@ -601,13 +569,32 @@ OVERLAY_HTML = """<!doctype html>
       const splashA = mixColor(c2, { r: 255, g: 255, b: 255 }, 0.22);
       const splashB = mixColor(c3, { r: 8, g: 12, b: 18 }, 0.18);
       const splashC = mixColor(c4, c2, 0.52);
+      const jitter = (base, range) => base + (Math.random() * 2 - 1) * range;
+
+      const aW = jitter(120, 7);
+      const aH = jitter(120, 7);
+      const aX = jitter(14, 3);
+      const aY = jitter(18, 3);
+      const aFade = jitter(46, 3);
+
+      const bW = jitter(95, 6);
+      const bH = jitter(120, 8);
+      const bX = jitter(86, 3);
+      const bY = jitter(20, 3);
+      const bFade = jitter(54, 3);
+
+      const cW = jitter(88, 6);
+      const cH = jitter(94, 6);
+      const cX = jitter(62, 4);
+      const cY = jitter(88, 4);
+      const cFade = jitter(52, 3);
 
       cardEl.style.setProperty("--card-base", toRgb(primary));
       cardEl.style.setProperty(
         "--card-splashes",
-        `radial-gradient(120% 120% at 14% 18%, ${toRgba(splashA, 0.34)} 0%, ${toRgba(splashA, 0)} 46%),
-         radial-gradient(95% 120% at 86% 20%, ${toRgba(splashB, 0.30)} 0%, ${toRgba(splashB, 0)} 54%),
-         radial-gradient(88% 94% at 62% 88%, ${toRgba(splashC, 0.28)} 0%, ${toRgba(splashC, 0)} 52%)`
+        `radial-gradient(${aW}% ${aH}% at ${aX}% ${aY}%, ${toRgba(splashA, 0.34)} 0%, ${toRgba(splashA, 0)} ${aFade}%),
+         radial-gradient(${bW}% ${bH}% at ${bX}% ${bY}%, ${toRgba(splashB, 0.30)} 0%, ${toRgba(splashB, 0)} ${bFade}%),
+         radial-gradient(${cW}% ${cH}% at ${cX}% ${cY}%, ${toRgba(splashC, 0.28)} 0%, ${toRgba(splashC, 0)} ${cFade}%)`
       );
 
       const backgroundSamples = [
@@ -625,18 +612,18 @@ OVERLAY_HTML = """<!doctype html>
 
       if (darkScore >= lightScore) {
         cardEl.style.setProperty("--ink", "rgba(14, 24, 29, 0.98)");
+        cardEl.style.setProperty("--subtext", "rgba(14, 24, 29, 0.94)");
         cardEl.style.setProperty("--muted", "rgba(14, 24, 29, 0.82)");
         cardEl.style.setProperty("--muted-strong", "rgba(14, 24, 29, 0.88)");
         cardEl.style.setProperty("--progress-bg", "rgba(14, 24, 29, 0.30)");
         cardEl.style.setProperty("--progress-fill", "rgba(14, 24, 29, 0.62)");
-        cardEl.style.setProperty("--text-shadow", "0 1px 2px rgba(255, 255, 255, 0.18)");
       } else {
         cardEl.style.setProperty("--ink", "rgba(248, 252, 255, 0.99)");
+        cardEl.style.setProperty("--subtext", "rgba(248, 252, 255, 0.94)");
         cardEl.style.setProperty("--muted", "rgba(248, 252, 255, 0.85)");
         cardEl.style.setProperty("--muted-strong", "rgba(248, 252, 255, 0.90)");
         cardEl.style.setProperty("--progress-bg", "rgba(248, 252, 255, 0.34)");
         cardEl.style.setProperty("--progress-fill", "rgba(248, 252, 255, 0.70)");
-        cardEl.style.setProperty("--text-shadow", "0 1px 2px rgba(0, 0, 0, 0.45)");
       }
     }
 
