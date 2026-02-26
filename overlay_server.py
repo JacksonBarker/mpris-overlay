@@ -19,6 +19,10 @@ from urllib.parse import urlparse
 LOGGER = logging.getLogger("mpris-overlay")
 TRACK_KEY = "org.mpris.MediaPlayer2.Player"
 MPRIS_PATH = "/org/mpris/MediaPlayer2"
+EXCLUDED_PLAYER_PREFIXES = (
+    "chromium.instance",
+    "brave.instance2",
+)
 
 
 @dataclass
@@ -53,10 +57,12 @@ class GDBusMPRISClient:
     def __init__(self, mode: str = "auto") -> None:
         gdbus = shutil.which("gdbus")
         if gdbus is None:
-            raise RuntimeError("gdbus not found. Install glib2 tools and try again.")
+            raise RuntimeError(
+                "gdbus not found. Install glib2 tools and try again.")
         host_exec = shutil.which("distrobox-host-exec")
         if mode == "host" and host_exec is None:
-            raise RuntimeError("distrobox-host-exec was requested, but it is not available.")
+            raise RuntimeError(
+                "distrobox-host-exec was requested, but it is not available.")
         self._gdbus_local = gdbus
         self._host_exec = host_exec
         self._mode = mode
@@ -76,9 +82,35 @@ class GDBusMPRISClient:
         if not tracks:
             return TrackInfo(status="Stopped")
 
-        for track in tracks:
-            if track.status == "Playing":
-                return track
+        allowed_tracks = [track for track in tracks if not self._is_excluded_player(track.player)]
+        blocked_tracks = [track for track in tracks if self._is_excluded_player(track.player)]
+
+        preferred_allowed = self._pick_preferred_track(allowed_tracks)
+        if preferred_allowed is not None:
+            return preferred_allowed
+
+        preferred_blocked = self._pick_preferred_track(blocked_tracks)
+        if preferred_blocked is not None:
+            return preferred_blocked
+
+        return TrackInfo(status="Stopped")
+
+    @staticmethod
+    def _is_excluded_player(player_name: str) -> bool:
+        normalized = player_name.strip().lower()
+        return any(
+            normalized == prefix or normalized.startswith(prefix)
+            for prefix in EXCLUDED_PLAYER_PREFIXES
+        )
+
+    @staticmethod
+    def _pick_preferred_track(tracks: list[TrackInfo]) -> TrackInfo | None:
+        if not tracks:
+            return None
+        for wanted_status in ("Playing", "Paused"):
+            for track in tracks:
+                if track.status == wanted_status:
+                    return track
         return tracks[0]
 
     def _list_players(self) -> list[str]:
@@ -158,7 +190,8 @@ class GDBusMPRISClient:
             album=self._extract_text_key(metadata_blob, "xesam:album"),
             art_url=self._extract_text_key(metadata_blob, "mpris:artUrl"),
             track_id=self._extract_track_id(metadata_blob),
-            length_us=max(0, self._extract_int_metadata_key(metadata_blob, "mpris:length")),
+            length_us=max(0, self._extract_int_metadata_key(
+                metadata_blob, "mpris:length")),
             position_us=max(0, position_us),
         )
 
@@ -181,7 +214,8 @@ class GDBusMPRISClient:
 
         message = proc.stderr.strip() or proc.stdout.strip() or "gdbus call failed"
         if self._mode == "auto" and self._host_exec and self._should_fallback_to_host(message):
-            LOGGER.info("Local DBus access failed, retrying via distrobox-host-exec")
+            LOGGER.info(
+                "Local DBus access failed, retrying via distrobox-host-exec")
             self._prefer_host = True
             return self._run_cmd(args, use_host=True)
         raise RuntimeError(message)
@@ -242,7 +276,8 @@ class GDBusMPRISClient:
 
     @staticmethod
     def _extract_track_id(blob: str) -> str:
-        match = re.search(r"'mpris:trackid': <objectpath '((?:[^'\\]|\\.)*)'>", blob)
+        match = re.search(
+            r"'mpris:trackid': <objectpath '((?:[^'\\]|\\.)*)'>", blob)
         if not match:
             return ""
         return GDBusMPRISClient._unescape(match.group(1))
@@ -280,7 +315,8 @@ class MPRISPoller:
         self._store = store
         self._interval = interval
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="mpris-poller", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run, name="mpris-poller", daemon=True)
         self._client = GDBusMPRISClient(mode=dbus_mode)
 
     def start(self) -> None:
@@ -298,7 +334,8 @@ class MPRISPoller:
                 self._store.set_track(track)
             except Exception as exc:
                 LOGGER.warning("MPRIS poll failed: %s", exc)
-                self._store.set_track(TrackInfo(status="Stopped", last_update=time.time()))
+                self._store.set_track(
+                    TrackInfo(status="Stopped", last_update=time.time()))
             self._stop_event.wait(self._interval)
 
 
@@ -452,10 +489,10 @@ OVERLAY_HTML = """<!doctype html>
     }
   </style>
 </head>
-<body>
-  <article class="card">
+  <body>
+  <article class="card" hidden>
     <div class="art-wrap">
-      <img id="art" class="placeholder" alt="Album art" />
+      <img id="art" class="placeholder" alt="" />
     </div>
     <section class="meta">
       <div id="title">Nothing Playing</div>
@@ -490,8 +527,14 @@ OVERLAY_HTML = """<!doctype html>
       { r: 205, g: 210, b: 214 },
       { r: 233, g: 233, b: 235 },
     ];
+    const EXCLUDED_PLAYERS = [
+      // Add more entries as needed. Matching is exact or prefix.
+      "chromium.instance",
+      "brave.instance",
+    ];
 
     let lastArtUrl = "";
+    let artLoadToken = 0;
 
     function formatTimeFromUs(us) {
       const totalSeconds = Math.max(0, Math.floor((Number(us) || 0) / 1000000));
@@ -627,7 +670,7 @@ OVERLAY_HTML = """<!doctype html>
       }
     }
 
-    function extractPaletteFromArt() {
+    function extractPaletteFromArt(sourceImage) {
       try {
         const size = 56;
         const canvas = document.createElement("canvas");
@@ -637,7 +680,7 @@ OVERLAY_HTML = """<!doctype html>
         if (!ctx) {
           return null;
         }
-        ctx.drawImage(artEl, 0, 0, size, size);
+        ctx.drawImage(sourceImage, 0, 0, size, size);
         const data = ctx.getImageData(0, 0, size, size).data;
         const buckets = new Map();
 
@@ -700,13 +743,35 @@ OVERLAY_HTML = """<!doctype html>
       applyPaletteTheme(DEFAULT_PALETTE);
     }
 
+    function isExcludedPlayer(player) {
+      const normalized = (player || "").trim().toLowerCase();
+      if (!normalized) {
+        return false;
+      }
+      return EXCLUDED_PLAYERS.some((entry) => {
+        const candidate = entry.toLowerCase();
+        return normalized === candidate || normalized.startsWith(candidate);
+      });
+    }
+
     function render(track) {
       const title = (track.title || "").trim();
       const artist = (track.artist || "").trim();
       const album = (track.album || "").trim();
       const status = (track.status || "").trim();
+      const player = (track.player || "").trim();
       const artUrl = (track.art_url || "").trim();
       const hasTrack = Boolean(title || artist);
+      const hasActivePlayer =
+        Boolean(player) &&
+        !isExcludedPlayer(player) &&
+        (status === "Playing" || status === "Paused");
+
+      cardEl.hidden = !hasActivePlayer;
+      cardEl.style.display = hasActivePlayer ? "grid" : "none";
+      if (!hasActivePlayer) {
+        return;
+      }
 
       titleEl.textContent = hasTrack ? (title || "Unknown Title") : "Nothing Playing";
       artistEl.textContent = hasTrack ? (artist || "Unknown Artist") : "Start playback in any MPRIS player";
@@ -721,6 +786,7 @@ OVERLAY_HTML = """<!doctype html>
       totalEl.textContent = formatTimeFromUs(lengthUs);
 
       if (!artUrl) {
+        artLoadToken += 1;
         lastArtUrl = "";
         artEl.removeAttribute("src");
         artEl.classList.add("placeholder");
@@ -728,13 +794,35 @@ OVERLAY_HTML = """<!doctype html>
         return;
       }
       if (artUrl !== lastArtUrl) {
+        const token = ++artLoadToken;
+        const probe = new Image();
         if (/^https?:\\/\\//i.test(artUrl)) {
-          artEl.crossOrigin = "anonymous";
-        } else {
-          artEl.removeAttribute("crossorigin");
+          probe.crossOrigin = "anonymous";
         }
-        artEl.src = artUrl;
-        lastArtUrl = artUrl;
+        probe.onload = () => {
+          if (token !== artLoadToken) {
+            return;
+          }
+          artEl.src = artUrl;
+          artEl.classList.remove("placeholder");
+          lastArtUrl = artUrl;
+          const palette = extractPaletteFromArt(probe);
+          if (palette) {
+            applyPaletteTheme(palette);
+          } else {
+            applyDefaultTheme();
+          }
+        };
+        probe.onerror = () => {
+          if (token !== artLoadToken) {
+            return;
+          }
+          lastArtUrl = "";
+          artEl.removeAttribute("src");
+          artEl.classList.add("placeholder");
+          applyDefaultTheme();
+        };
+        probe.src = artUrl;
       }
     }
 
@@ -748,21 +836,6 @@ OVERLAY_HTML = """<!doctype html>
         render(track);
       } catch (_) {}
     }
-
-    artEl.addEventListener("load", () => {
-      artEl.classList.remove("placeholder");
-      const palette = extractPaletteFromArt();
-      if (palette) {
-        applyPaletteTheme(palette);
-      } else {
-        applyDefaultTheme();
-      }
-    });
-
-    artEl.addEventListener("error", () => {
-      artEl.classList.add("placeholder");
-      applyDefaultTheme();
-    });
 
     applyDefaultTheme();
     refreshTrack();
@@ -809,8 +882,10 @@ class OverlayHandler(BaseHTTPRequestHandler):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="MPRIS now-playing overlay web server")
-    parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind")
+    parser = argparse.ArgumentParser(
+        description="MPRIS now-playing overlay web server")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="Host interface to bind")
     parser.add_argument("--port", type=int, default=8765, help="HTTP port")
     parser.add_argument(
         "--poll-interval",
@@ -842,7 +917,8 @@ def main() -> None:
 
     store = TrackStore()
     OverlayHandler.store = store
-    poller = MPRISPoller(store, interval=max(0.2, args.poll_interval), dbus_mode=args.dbus_mode)
+    poller = MPRISPoller(store, interval=max(
+        0.2, args.poll_interval), dbus_mode=args.dbus_mode)
     poller.start()
 
     server = ThreadingHTTPServer((args.host, args.port), OverlayHandler)
