@@ -259,11 +259,11 @@ class GDBusMPRISClient:
 
     @staticmethod
     def _extract_text_key(blob: str, key: str) -> str:
-        pattern = rf"'{re.escape(key)}': <(?:string )?'((?:[^'\\]|\\.)*)'>"
+        pattern = rf"'{re.escape(key)}': <(?:string )?(['\"])((?:[^\\]|\\.)*?)\1>"
         match = re.search(pattern, blob)
         if not match:
             return ""
-        return GDBusMPRISClient._unescape(match.group(1))
+        return GDBusMPRISClient._unescape(match.group(2))
 
     @staticmethod
     def _extract_artists(blob: str) -> str:
@@ -277,7 +277,7 @@ class GDBusMPRISClient:
     @staticmethod
     def _extract_track_id(blob: str) -> str:
         match = re.search(
-            r"'mpris:trackid': <objectpath '((?:[^'\\]|\\.)*)'>", blob)
+            r"'mpris:trackid': <(?:objectpath )?'((?:[^'\\]|\\.)*)'>", blob)
         if not match:
             return ""
         return GDBusMPRISClient._unescape(match.group(1))
@@ -307,7 +307,7 @@ class GDBusMPRISClient:
 
     @staticmethod
     def _unescape(value: str) -> str:
-        return value.replace("\\\\", "\\").replace("\\'", "'")
+        return value.replace("\\\\", "\\").replace("\\'", "'").replace('\\"', '"')
 
 
 class MPRISPoller:
